@@ -17,19 +17,21 @@ class ReceiptOcrParser {
     r'\b(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})\b',
   );
   static final RegExp _lastFour = RegExp(
-    r'(?:ending|card|acct|account|[*xX•]{2,})[^0-9]{0,8}(\d{4})\b',
+    r'(?:ending|card|acct|account|[*xX•]{2,}|\.{2,}|…)[^0-9]{0,8}(\d{4})\b',
     caseSensitive: false,
   );
 
-  static ReceiptScanResult parse(String rawText) {
+  /// Parses recognised receipt text. [now] anchors date disambiguation and
+  /// future-date rejection; it defaults to the current time.
+  static ReceiptScanResult parse(String rawText, {DateTime? now}) {
     final lines = rawText
         .split(RegExp(r'[\r\n]+'))
-        .map((line) => line.replaceAll(RegExp(r'\s+'), ' ').trim())
+        .map(_normalizeOcrLine)
         .where((line) => line.isNotEmpty)
         .toList(growable: false);
 
     final subtotal = _findLabeledAmount(lines, const ['subtotal', 'sub total']);
-    final tax = _findTax(lines);
+    var tax = _findTax(lines);
     final tip = _findLabeledAmount(lines, const ['tip', 'gratuity']);
     final labeledTotal = _findLabeledAmount(
       lines,
@@ -54,6 +56,17 @@ class ReceiptOcrParser {
         'total savings',
       ],
     );
+    // The printed total is the most reliable number on a receipt. When both
+    // it and the subtotal were read but the tax lines do not add up (a lost
+    // PST line, a cents column dropped by OCR), take the tax the arithmetic
+    // implies so the prefilled amounts are at least consistent.
+    if (labeledTotal != null && subtotal != null) {
+      final derivedTax = labeledTotal - subtotal - (tip ?? 0);
+      final booksBalance = subtotal + (tax ?? 0) + (tip ?? 0) == labeledTotal;
+      if (!booksBalance && derivedTax > 0 && derivedTax <= subtotal * 0.3) {
+        tax = derivedTax;
+      }
+    }
     final calculatedTotal = subtotal != null && (tax != null || tip != null)
         ? subtotal + (tax ?? 0) + (tip ?? 0)
         : null;
@@ -67,7 +80,7 @@ class ReceiptOcrParser {
 
     return ReceiptScanResult(
       merchantName: _findMerchant(lines),
-      transactionDate: _findDate(lines),
+      transactionDate: _findDate(lines, now ?? DateTime.now()),
       subtotalCents: inferredSubtotal,
       taxCents: tax,
       tipCents: tip,
@@ -77,6 +90,22 @@ class ReceiptOcrParser {
       items: _findItems(lines, total),
       rawText: rawText.trim(),
     );
+  }
+
+  /// Collapses whitespace and repairs the decimal artefacts ML Kit produces
+  /// on receipt columns: "50. .00" and "88 .42" become "50.00" and "88.42",
+  /// and a bare ".00" becomes "0.00".
+  static String _normalizeOcrLine(String line) {
+    var text = line.replaceAll(RegExp(r'\s+'), ' ').trim();
+    text = text.replaceAllMapped(
+      RegExp(r'(\d)\s*[.,]\s*[.,]?\s*(\d{2})(?!\d)'),
+      (match) => '${match.group(1)}.${match.group(2)}',
+    );
+    text = text.replaceAllMapped(
+      RegExp(r'(?<![\d.,])[.,](\d{2})(?!\d)'),
+      (match) => '0.${match.group(1)}',
+    );
+    return text;
   }
 
   static String _findMerchant(List<String> lines) {
@@ -142,7 +171,7 @@ class ReceiptOcrParser {
     return '';
   }
 
-  static DateTime? _findDate(List<String> lines) {
+  static DateTime? _findDate(List<String> lines, DateTime now) {
     for (final line in lines) {
       final match = _numericDate.firstMatch(line);
       if (match == null) {
@@ -155,28 +184,24 @@ class ReceiptOcrParser {
         continue;
       }
 
-      int year;
-      int month;
-      int day;
+      DateTime? date;
       if (first > 999) {
-        year = first;
-        month = second;
-        day = third;
+        date = _validDate(first, second, third, now);
       } else {
-        year = third < 100 ? 2000 + third : third;
+        final year = third < 100 ? 2000 + third : third;
         if (first > 12) {
-          day = first;
-          month = second;
+          date = _validDate(year, second, first, now);
         } else if (second > 12) {
-          month = first;
-          day = second;
+          date = _validDate(year, first, second, now);
         } else {
-          // Most North American receipts use month/day/year.
-          month = first;
-          day = second;
+          // Both month/day and day/month are plausible. Canadian receipts use
+          // either, so prefer the reading closest to today: receipts are
+          // almost always scanned within days of the purchase.
+          final monthFirst = _validDate(year, first, second, now);
+          final dayFirst = _validDate(year, second, first, now);
+          date = _closestToNow(monthFirst, dayFirst, now);
         }
       }
-      final date = _validDate(year, month, day);
       if (date != null) {
         return date;
       }
@@ -218,7 +243,7 @@ class ReceiptOcrParser {
             monthNumbers[firstMatch.group(1)!.substring(0, 3).toLowerCase()];
         final day = int.parse(firstMatch.group(2)!);
         final year = int.parse(firstMatch.group(3)!);
-        final date = month == null ? null : _validDate(year, month, day);
+        final date = month == null ? null : _validDate(year, month, day, now);
         if (date != null) {
           return date;
         }
@@ -229,7 +254,7 @@ class ReceiptOcrParser {
         final month =
             monthNumbers[secondMatch.group(2)!.substring(0, 3).toLowerCase()];
         final year = int.parse(secondMatch.group(3)!);
-        final date = month == null ? null : _validDate(year, month, day);
+        final date = month == null ? null : _validDate(year, month, day, now);
         if (date != null) {
           return date;
         }
@@ -238,8 +263,8 @@ class ReceiptOcrParser {
     return null;
   }
 
-  static DateTime? _validDate(int year, int month, int day) {
-    if (year < 2000 || year > DateTime.now().year + 1) {
+  static DateTime? _validDate(int year, int month, int day, DateTime now) {
+    if (year < 2000 || year > now.year + 1) {
       return null;
     }
     try {
@@ -250,6 +275,16 @@ class ReceiptOcrParser {
     } on ArgumentError {
       return null;
     }
+  }
+
+  static DateTime? _closestToNow(DateTime? a, DateTime? b, DateTime now) {
+    if (a == null) return b;
+    if (b == null || a == b) return a;
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final aFuture = a.isAfter(tomorrow);
+    final bFuture = b.isAfter(tomorrow);
+    if (aFuture != bFuture) return aFuture ? b : a;
+    return a.difference(now).abs() <= b.difference(now).abs() ? a : b;
   }
 
   static int? _findLabeledAmount(
@@ -272,11 +307,9 @@ class ReceiptOcrParser {
       if (amount != null) {
         return amount;
       }
-      // Many layouts put the amount directly below a standalone TOTAL label.
-      if (index + 1 < lines.length) {
-        final followingAmount = _parseStandaloneAmount(lines[index + 1]);
-        if (followingAmount != null) return followingAmount;
-      }
+      // Column-split output puts the amount alone on a neighbouring line.
+      final adjacentAmount = _adjacentStandaloneAmount(lines, index);
+      if (adjacentAmount != null) return adjacentAmount;
       // ML Kit can return the left and right columns of a receipt as separate
       // text blocks. In that case labels such as SUBTOTAL and TOTAL appear
       // together, followed later by their standalone amounts.
@@ -286,6 +319,46 @@ class ReceiptOcrParser {
       }
     }
     return null;
+  }
+
+  static final RegExp _labelWords = RegExp(
+    r'\b(sub\s?total|total|tax|gst|hst|pst|qst|tip|gratuity|amount|'
+    r'balance|due|change|cash|tender|discount|saving)',
+  );
+
+  static bool _isLabelLine(String line) {
+    return _labelWords.hasMatch(_normalizedLabel(line)) &&
+        _parseStandaloneAmount(line) == null;
+  }
+
+  /// The standalone amount that belongs to the label on [index] when ML Kit
+  /// has split a receipt into a label column and an amount column.
+  ///
+  /// Amounts can land either after their labels ("TOTAL" / "61.50") or
+  /// before them ("3.05" / "GST INCLUDED"). When both neighbours are
+  /// amounts, follow the alternating run of labels and amounts to its end:
+  /// a run that ends with an amount reads label-then-amount, a run that
+  /// ends with a label reads amount-then-label.
+  static int? _adjacentStandaloneAmount(List<String> lines, int index) {
+    final next = index + 1 < lines.length
+        ? _parseStandaloneAmount(lines[index + 1])
+        : null;
+    final previous = index > 0
+        ? _parseStandaloneAmount(lines[index - 1])
+        : null;
+    if (next == null || previous == null) return next ?? previous;
+
+    var end = index;
+    var expectAmount = true;
+    while (end + 1 < lines.length) {
+      final candidate = lines[end + 1];
+      final isAmount = _parseStandaloneAmount(candidate) != null;
+      if (expectAmount ? !isAmount : !_isLabelLine(candidate)) break;
+      end++;
+      expectAmount = !expectAmount;
+    }
+    final endsWithAmount = _parseStandaloneAmount(lines[end]) != null;
+    return endsWithAmount ? next : previous;
   }
 
   static int? _findNearbyStandaloneAmount(List<String> lines, int labelIndex) {
@@ -315,13 +388,15 @@ class ReceiptOcrParser {
   static int? _findTax(List<String> lines) {
     final taxAmounts = <int>[];
     int? combinedTax;
-    for (final line in lines) {
+    for (var index = 0; index < lines.length; index++) {
+      final line = lines[index];
       final lower = _normalizedLabel(line);
       if (!RegExp(r'\b(tax|gst|hst|pst|qst)\b').hasMatch(lower) ||
           lower.contains('taxable')) {
         continue;
       }
-      final amount = _parseAmountAtEnd(line);
+      final amount =
+          _parseAmountAtEnd(line) ?? _adjacentStandaloneAmount(lines, index);
       if (amount == null || amount < 0) {
         continue;
       }
@@ -545,15 +620,12 @@ class ReceiptOcrParser {
     if (letters.isEmpty || letters != letters.toUpperCase()) {
       return trimmed;
     }
-    return trimmed
-        .toLowerCase()
-        .split(' ')
-        .map(
-          (word) => word.isEmpty
-              ? word
-              : '${word.substring(0, 1).toUpperCase()}${word.substring(1)}',
-        )
-        .join(' ');
+    // Capitalise the first letter of every word, including the parts of
+    // hyphenated names such as Petro-Canada.
+    return trimmed.toLowerCase().replaceAllMapped(
+      RegExp(r'(^|[\s\-/])([a-z])'),
+      (match) => '${match.group(1)}${match.group(2)!.toUpperCase()}',
+    );
   }
 
   static String _normalizedLabel(String value) {

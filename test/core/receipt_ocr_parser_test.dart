@@ -253,6 +253,102 @@ VISA **** 1234
     expect(result.paymentMethod, 'Visa');
   });
 
+  test('repairs ML Kit decimal artefacts in a column-split receipt', () {
+    const rawText = '''
+CACTUS CLUB CAFE
+Sep 2, 2026 7:15 PM
+BUTTERNUT RAVIOLI
+24.00
+SUBTOTAL
+50. .00
+GST
+2. .50
+TIP
+.00
+TOTAL
+52.50
+MASTERCARD XXXX 7788
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.subtotalCents, 5000);
+    expect(result.taxCents, 250);
+    expect(result.tipCents, 0);
+    expect(result.totalCents, 5250);
+    expect(result.cardLastFour, '7788');
+  });
+
+  test('reads a tax amount printed on the line before its label', () {
+    const rawText = '''
+PETRO-CANADA
+09/01/2026 08:12
+FUEL SALE 64.10
+3.05
+GST INCLUDED
+64.10
+TOTAL
+DEBIT CHEQUING
+ACCT ****2210
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.merchantName, 'Petro-Canada');
+    expect(result.taxCents, 305);
+    expect(result.totalCents, 6410);
+    expect(result.paymentMethod, 'Debit');
+    expect(result.cardLastFour, '2210');
+  });
+
+  test('derives tax from subtotal and total when a tax line is damaged', () {
+    const rawText = '''
+SAVE-ON-FOODS #2219
+2026-09-03 18:42
+SUBTOTAL 78.94
+GST 5% 3.95
+PST 7% 5
+TOTAL 88.42
+VISA ****4021
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.subtotalCents, 7894);
+    expect(result.taxCents, 948);
+    expect(result.totalCents, 8842);
+  });
+
+  test('reads card digits after an ellipsis', () {
+    const rawText = '''
+NOMAD COFFEE
+FLAT WHITE 5.25
+TOTAL 5.25
+VISA DEBIT ...5533
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.cardLastFour, '5533');
+  });
+
+  test('prefers the ambiguous date reading closest to today', () {
+    const rawText = '''
+NOMAD COFFEE
+03/09/2026 09:02
+TOTAL 5.25
+''';
+
+    final september = ReceiptOcrParser.parse(
+      rawText,
+      now: DateTime(2026, 9, 5),
+    );
+    expect(september.transactionDate, DateTime(2026, 9, 3));
+
+    final march = ReceiptOcrParser.parse(rawText, now: DateTime(2026, 3, 10));
+    expect(march.transactionDate, DateTime(2026, 3, 9));
+  });
+
   test('leaves the date unset when the receipt has no valid date', () {
     const rawText = '''
 CORNER STORE
