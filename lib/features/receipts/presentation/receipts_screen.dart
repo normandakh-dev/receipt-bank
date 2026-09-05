@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:receipt_vault_ai/app/theme/ledger_styles.dart';
+import 'package:receipt_vault_ai/core/analytics/spending_report_calculator.dart';
 import 'package:receipt_vault_ai/data/local/app_database.dart';
 import 'package:receipt_vault_ai/data/providers/database_providers.dart';
-import 'package:receipt_vault_ai/shared/widgets/category_visuals.dart';
-import 'package:receipt_vault_ai/shared/widgets/receipt_tile.dart';
+import 'package:receipt_vault_ai/shared/widgets/ledger_widgets.dart';
 
+/// "Receipts · Ledger" from the paper-ledger design: mono filter chips and
+/// receipts grouped by week with a total in each week header.
 class ReceiptsScreen extends ConsumerStatefulWidget {
   const ReceiptsScreen({
     this.initialCategoryId,
@@ -27,6 +31,8 @@ class ReceiptsScreen extends ConsumerStatefulWidget {
 class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String? _selectedCategoryId;
+  bool _starredOnly = false;
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -53,11 +59,17 @@ class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
 
   void _onSearchChanged() => setState(() {});
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) _searchController.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final receipts = ref.watch(receiptListProvider);
     final categories = ref.watch(categoriesProvider);
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: SafeArea(
@@ -65,132 +77,96 @@ class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              padding: const EdgeInsets.fromLTRB(24, 22, 12, 0),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'RECEIPTS',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: colorScheme.primary,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
-                              ),
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          'Your receipt vault',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                      ],
+                    child: Text(
+                      'Ledger',
+                      style: LedgerStyles.screenTitle(context),
                     ),
                   ),
-                  FilledButton.tonalIcon(
+                  IconButton(
+                    tooltip: _isSearching ? 'Close search' : 'Search receipts',
+                    onPressed: _toggleSearch,
+                    icon: Icon(
+                      _isSearching ? Icons.close_rounded : Icons.search_rounded,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Add receipt manually',
                     onPressed: () => context.push('/receipts/new'),
                     icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add'),
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: TextField(
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: 'Search merchant, category, or purpose',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _searchController.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: _searchController.clear,
-                          icon: const Icon(Icons.close_rounded),
-                        ),
+            if (_isSearching)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  decoration: const InputDecoration(
+                    hintText: 'Search merchant, category, or purpose',
+                    prefixIcon: Icon(Icons.search_rounded),
+                    isDense: true,
+                  ),
                 ),
               ),
-            ),
+            const SizedBox(height: 18),
             SizedBox(
-              height: 48,
-              child: categories.when(
-                loading: () => const SizedBox.shrink(),
-                error: (error, stackTrace) => const SizedBox.shrink(),
-                data: (items) {
-                  final orderedItems = [
-                    ...items.where(
-                      (category) => category.id == _selectedCategoryId,
-                    ),
-                    ...items.where(
-                      (category) => category.id != _selectedCategoryId,
-                    ),
-                  ];
-
-                  return ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    children: [
-                      ChoiceChip(
-                        label: const Text('All'),
-                        selected: _selectedCategoryId == null,
-                        onSelected: (_) =>
-                            setState(() => _selectedCategoryId = null),
-                      ),
-                      const SizedBox(width: 8),
-                      for (final category in orderedItems) ...[
-                        ChoiceChip(
-                          avatar: Icon(
-                            categoryIcon(category.iconCode),
-                            size: 18,
-                          ),
-                          label: Text(category.name),
+              height: 34,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                children: [
+                  LedgerChip(
+                    label: 'All',
+                    selected: _selectedCategoryId == null && !_starredOnly,
+                    onTap: () => setState(() {
+                      _selectedCategoryId = null;
+                      _starredOnly = false;
+                    }),
+                  ),
+                  const SizedBox(width: 7),
+                  LedgerChip(
+                    label: 'Starred',
+                    selected: _starredOnly,
+                    onTap: () => setState(() => _starredOnly = !_starredOnly),
+                  ),
+                  ...categories.when(
+                    loading: () => const <Widget>[],
+                    error: (error, stackTrace) => const <Widget>[],
+                    data: (items) => [
+                      for (final category in _ordered(
+                        items,
+                        receipts.value ?? const [],
+                      )) ...[
+                        const SizedBox(width: 7),
+                        LedgerChip(
+                          label: _chipLabel(category),
                           selected: _selectedCategoryId == category.id,
-                          onSelected: (_) =>
-                              setState(() => _selectedCategoryId = category.id),
+                          onTap: () => setState(() {
+                            _selectedCategoryId =
+                                _selectedCategoryId == category.id
+                                ? null
+                                : category.id;
+                          }),
                         ),
-                        const SizedBox(width: 8),
                       ],
                     ],
-                  );
-                },
+                  ),
+                ],
               ),
             ),
             if (_hasPeriodFilter)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 2),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_month_rounded,
-                        size: 20,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          widget.periodLabel ?? 'Selected period',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(color: colorScheme.onPrimaryContainer),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Clear period',
-                        onPressed: () => context.go('/receipts'),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                child: _PeriodBanner(
+                  label: widget.periodLabel ?? 'Selected period',
+                  onClear: () => context.go('/receipts'),
                 ),
               ),
             const SizedBox(height: 8),
@@ -206,34 +182,76 @@ class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
                 data: (items) {
                   final filtered = _filter(items);
                   if (filtered.isEmpty) {
-                    return _EmptyReceipts(
-                      hasFilters:
-                          _selectedCategoryId != null ||
-                          _hasPeriodFilter ||
-                          _searchController.text.trim().isNotEmpty,
-                      onAdd: () => context.push('/receipts/new'),
-                      onClear: () {
-                        if (_hasPeriodFilter) {
-                          context.go('/receipts');
-                          return;
-                        }
-                        _searchController.clear();
-                        setState(() => _selectedCategoryId = null);
-                      },
+                    final hasFilters =
+                        _selectedCategoryId != null ||
+                        _starredOnly ||
+                        _hasPeriodFilter ||
+                        _searchController.text.trim().isNotEmpty;
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
+                      children: [
+                        LedgerEmptyState(
+                          title: hasFilters
+                              ? 'No matching receipts'
+                              : 'No receipts yet',
+                          message: hasFilters
+                              ? 'Try a different search, category, or period.'
+                              : 'Add a receipt to begin your private ledger.',
+                          actionLabel: hasFilters ? null : 'Add receipt',
+                          onAction: hasFilters
+                              ? null
+                              : () => context.push('/receipts/new'),
+                        ),
+                        if (hasFilters)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton(
+                              onPressed: () {
+                                if (_hasPeriodFilter) {
+                                  context.go('/receipts');
+                                  return;
+                                }
+                                _searchController.clear();
+                                setState(() {
+                                  _selectedCategoryId = null;
+                                  _starredOnly = false;
+                                });
+                              },
+                              child: const Text('Clear filters'),
+                            ),
+                          ),
+                      ],
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                    itemCount: filtered.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
+                  final groups = _groupByWeek(filtered);
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
+                    itemCount: groups.length,
                     itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return ReceiptTile(
-                        item: item,
-                        onTap: () =>
-                            context.push('/receipts/${item.receipt.id}'),
+                      final group = groups[index];
+                      return Padding(
+                        padding: EdgeInsets.only(top: index == 0 ? 8 : 22),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            LedgerSectionHeader(
+                              label: group.label,
+                              underline: true,
+                              trailing: Text(
+                                ledgerAmount(group.totalCents),
+                                style: LedgerStyles.headerAmount(context),
+                              ),
+                            ),
+                            for (final item in group.items)
+                              LedgerRow(
+                                item: item,
+                                onTap: () => context.push(
+                                  '/receipts/${item.receipt.id}',
+                                ),
+                              ),
+                          ],
+                        ),
                       );
                     },
                   );
@@ -246,14 +264,39 @@ class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
     );
   }
 
+  /// Selected chip first, then categories by how many receipts use them,
+  /// so the filters a person actually needs sit at the front of the row.
+  List<Category> _ordered(
+    List<Category> items,
+    List<ReceiptListItem> receipts,
+  ) {
+    final counts = <String, int>{};
+    for (final item in receipts) {
+      counts.update(item.category.id, (value) => value + 1, ifAbsent: () => 1);
+    }
+    final ordered = [...items]
+      ..sort((a, b) {
+        if (a.id == _selectedCategoryId) return -1;
+        if (b.id == _selectedCategoryId) return 1;
+        final byCount = (counts[b.id] ?? 0).compareTo(counts[a.id] ?? 0);
+        return byCount != 0 ? byCount : a.name.compareTo(b.name);
+      });
+    return ordered;
+  }
+
+  static String _chipLabel(Category category) {
+    return category.id == LedgerRow.businessCategoryId ? 'Biz' : category.name;
+  }
+
   List<ReceiptListItem> _filter(List<ReceiptListItem> items) {
     final search = _searchController.text.trim().toLowerCase();
     return items
         .where((item) {
-          final matchesCategory =
-              _selectedCategoryId == null ||
-              item.category.id == _selectedCategoryId;
-          if (!matchesCategory) {
+          if (_selectedCategoryId != null &&
+              item.category.id != _selectedCategoryId) {
+            return false;
+          }
+          if (_starredOnly && !item.receipt.isFavorite) {
             return false;
           }
           final date = item.receipt.transactionDate;
@@ -279,58 +322,87 @@ class _ReceiptsScreenState extends ConsumerState<ReceiptsScreen> {
 
   bool get _hasPeriodFilter =>
       widget.initialStart != null && widget.initialEndExclusive != null;
+
+  /// Groups an already date-descending list into weeks starting on Monday.
+  static List<_WeekGroup> _groupByWeek(List<ReceiptListItem> items) {
+    final now = DateTime.now();
+    final thisWeek = SpendingReportCalculator.startOfWeek(now);
+    final groups = <_WeekGroup>[];
+    for (final item in items) {
+      final start = SpendingReportCalculator.startOfWeek(
+        item.receipt.transactionDate,
+      );
+      if (groups.isEmpty || groups.last.start != start) {
+        groups.add(
+          _WeekGroup(start: start, label: _weekLabel(start, thisWeek)),
+        );
+      }
+      groups.last.items.add(item);
+    }
+    return groups;
+  }
+
+  static String _weekLabel(DateTime start, DateTime thisWeek) {
+    if (start == thisWeek) return 'THIS WEEK';
+    final end = DateTime(start.year, start.month, start.day + 6);
+    final sameMonth = start.month == end.month && start.year == end.year;
+    final first = DateFormat('MMM d').format(start);
+    final last = sameMonth
+        ? DateFormat('d').format(end)
+        : DateFormat('MMM d').format(end);
+    final suffix = start.year == thisWeek.year ? '' : ' · ${start.year}';
+    return '$first – $last$suffix'.toUpperCase();
+  }
 }
 
-class _EmptyReceipts extends StatelessWidget {
-  const _EmptyReceipts({
-    required this.hasFilters,
-    required this.onAdd,
-    required this.onClear,
-  });
+class _WeekGroup {
+  _WeekGroup({required this.start, required this.label});
 
-  final bool hasFilters;
-  final VoidCallback onAdd;
+  final DateTime start;
+  final String label;
+  final List<ReceiptListItem> items = [];
+
+  int get totalCents =>
+      items.fold<int>(0, (sum, item) => sum + item.receipt.totalCents);
+}
+
+class _PeriodBanner extends StatelessWidget {
+  const _PeriodBanner({required this.label, required this.onClear});
+
+  final String label;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(32, 24, 32, 120),
-        child: Column(
-          children: [
-            Icon(
-              hasFilters
-                  ? Icons.search_off_rounded
-                  : Icons.receipt_long_outlined,
-              size: 54,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              hasFilters ? 'No matching receipts' : 'No receipts yet',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              hasFilters
-                  ? 'Try a different search or category.'
-                  : 'Add a receipt to begin your private spending history.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            if (hasFilters)
-              OutlinedButton(
-                onPressed: onClear,
-                child: const Text('Clear filters'),
-              )
-            else
-              FilledButton.icon(
-                onPressed: onAdd,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Add receipt'),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: LedgerStyles.accentSoft(context),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.calendar_month_rounded,
+            size: 18,
+            color: LedgerStyles.accent(context),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: LedgerStyles.ink(context),
               ),
-          ],
-        ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Clear period',
+            visualDensity: VisualDensity.compact,
+            onPressed: onClear,
+            icon: const Icon(Icons.close_rounded, size: 20),
+          ),
+        ],
       ),
     );
   }

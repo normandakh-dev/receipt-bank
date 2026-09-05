@@ -73,12 +73,20 @@ void main() {
     expect(find.text('RECEIPTVAULT AI'), findsNothing);
     expect(find.text('Receipt Wallet'), findsNothing);
     expect(find.textContaining('Good '), findsNothing);
-    expect(find.text('Home'), findsWidgets);
-    expect(find.text('Receipts'), findsOneWidget);
-    expect(find.text('Reports'), findsOneWidget);
-    expect(find.text('Tax'), findsOneWidget);
+    // The paper-ledger navigation pill is icon-only; destinations are
+    // exposed through tooltips and semantics labels.
+    expect(find.byTooltip('Home'), findsOneWidget);
+    expect(find.byTooltip('Receipts'), findsOneWidget);
+    expect(find.byTooltip('Reports'), findsOneWidget);
+    expect(find.byTooltip('Tax'), findsOneWidget);
     expect(find.byTooltip('Scan receipt'), findsOneWidget);
+    expect(find.text('LATEST'), findsOneWidget);
+    expect(find.textContaining('TOP CATEGORIES'), findsOneWidget);
 
+    // Categories are managed from Settings now.
+    await tester.tap(find.byTooltip('Settings and backup'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.tap(find.text('Categories'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
@@ -90,8 +98,11 @@ void main() {
     await tester.pageBack();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
-    await tester.tap(find.text('Tax'));
+    await tester.tap(find.byTooltip('Tax'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
 
@@ -119,7 +130,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Add receipt'), findsOneWidget);
-    expect(find.text('Home'), findsNothing);
+    expect(find.byTooltip('Home'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -172,6 +183,8 @@ void main() {
     expect(find.text('July 2026'), findsOneWidget);
     expect(find.text('July Market'), findsOneWidget);
     expect(find.text('June Market'), findsNothing);
+    expect(find.text('Ledger'), findsOneWidget);
+    expect(find.text('JUL 15 · GROCERIES'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));

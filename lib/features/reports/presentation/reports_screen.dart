@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:receipt_vault_ai/app/theme/ledger_styles.dart';
 import 'package:receipt_vault_ai/core/analytics/spending_report_calculator.dart';
 import 'package:receipt_vault_ai/core/export/receipt_excel_export_service.dart';
 import 'package:receipt_vault_ai/core/export/receipt_excel_workbook_builder.dart';
-import 'package:receipt_vault_ai/core/formatters/money_formatter.dart';
 import 'package:receipt_vault_ai/data/local/app_database.dart';
 import 'package:receipt_vault_ai/data/providers/database_providers.dart';
 import 'package:receipt_vault_ai/shared/widgets/category_visuals.dart';
+import 'package:receipt_vault_ai/shared/widgets/ledger_widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
@@ -104,13 +105,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
               children: [
+                Text('REPORTS', style: LedgerStyles.eyebrow(context)),
+                const SizedBox(height: 10),
                 Text(
-                  'REPORTS',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                  ),
+                  'Where money went',
+                  style: LedgerStyles.screenTitle(context),
                 ),
                 const SizedBox(height: 18),
                 _OverallTotalCard(
@@ -339,40 +338,18 @@ class _OverallTotalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: colorScheme.primary,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'All time',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onPrimary.withValues(alpha: 0.82),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            MoneyFormatter.formatCents(totalCents),
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              color: colorScheme.onPrimary,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '$receiptCount ${receiptCount == 1 ? 'receipt' : 'receipts'}',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onPrimary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ALL TIME · $receiptCount ${receiptCount == 1 ? 'RECEIPT' : 'RECEIPTS'}',
+          style: LedgerStyles.eyebrow(context),
+        ),
+        const SizedBox(height: 14),
+        LedgerHeroAmount(cents: totalCents, size: 44),
+        const SizedBox(height: 22),
+        const LedgerRule(),
+      ],
     );
   }
 }
@@ -435,10 +412,8 @@ class _PeriodSummaryTile extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text(
-                MoneyFormatter.formatCents(period.totalCents),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                ledgerAmount(period.totalCents),
+                style: LedgerStyles.rowAmount(context),
               ),
               const SizedBox(width: 2),
               const Icon(Icons.chevron_right_rounded),
@@ -522,10 +497,8 @@ class _CategoryReportTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    MoneyFormatter.formatCents(summary.totalCents),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                    ledgerAmount(summary.totalCents),
+                    style: LedgerStyles.rowAmount(context),
                   ),
                   const SizedBox(width: 2),
                   const Icon(Icons.chevron_right_rounded),

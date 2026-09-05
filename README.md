@@ -28,7 +28,10 @@ Completed:
 - Category drill-down into matching receipts
 - Custom category creation
 - Android and iOS Flutter scaffolds
-- Green Material 3 light and dark themes
+- Paper-ledger visual design (direction 2a of "ReceiptVault Screens"): warm
+  paper ground, ink type, a single green accent, JetBrains Mono tabular
+  numbers, hairline rules, a floating ink navigation pill, receipts grouped by
+  week, and the receipt detail drawn as a printed slip. Light and dark modes.
 - Five-branch state-preserving navigation
 - Raised center Scan action
 - Drift database with foreign-key enforcement
@@ -50,6 +53,16 @@ keeping every receipt record.
 OCR and purpose recognition run on the device. Receipt photos are used for
 recognition and are not uploaded by the app. Because receipt layouts vary,
 every detected value remains editable and the category must be confirmed.
+
+## Design
+
+The UI follows the paper-ledger direction from the design kickoff canvas.
+Palette and typography helpers live in `lib/app/theme/app_colors.dart`,
+`lib/app/theme/ledger_styles.dart`, and `lib/app/theme/app_theme.dart`.
+Shared ledger pieces (rows, chips, section headers, hero amounts, rules) live
+in `lib/shared/widgets/ledger_widgets.dart`. Fonts are bundled under
+`assets/fonts` with their OFL licenses: Instrument Sans for text and
+JetBrains Mono for numbers and labels.
 
 ## Structure
 

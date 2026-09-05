@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:receipt_vault_ai/app/theme/ledger_styles.dart';
 import 'package:receipt_vault_ai/core/analytics/tax_year_report.dart';
 import 'package:receipt_vault_ai/core/export/tax_pdf_export_service.dart';
-import 'package:receipt_vault_ai/core/formatters/money_formatter.dart';
 import 'package:receipt_vault_ai/data/local/app_database.dart';
 import 'package:receipt_vault_ai/data/providers/database_providers.dart';
+import 'package:receipt_vault_ai/shared/widgets/ledger_widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
 class TaxPurposeScreen extends ConsumerStatefulWidget {
@@ -117,22 +118,15 @@ class _TaxPurposeScreenState extends ConsumerState<TaxPurposeScreen> {
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
               children: [
-                Text(
-                  'TAX PURPOSE',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 7),
+                Text('TAX PURPOSE', style: LedgerStyles.eyebrow(context)),
+                const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Text(
                         'Yearly expenses',
-                        style: Theme.of(context).textTheme.headlineMedium,
+                        style: LedgerStyles.screenTitle(context),
                       ),
                     ),
                     _YearPicker(
@@ -258,27 +252,20 @@ class _YearSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 22),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(26),
+        border: Border(bottom: BorderSide(color: LedgerStyles.rule(context))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${report.year} expense total',
-            style: Theme.of(context).textTheme.titleMedium,
+            '${report.year} EXPENSE TOTAL',
+            style: LedgerStyles.eyebrow(context),
           ),
-          const SizedBox(height: 8),
-          Text(
-            MoneyFormatter.formatCents(report.totalCents),
-            style: Theme.of(
-              context,
-            ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
-          ),
+          const SizedBox(height: 14),
+          LedgerHeroAmount(cents: report.totalCents, size: 44),
           const SizedBox(height: 18),
           Row(
             children: [
@@ -291,7 +278,7 @@ class _YearSummaryCard extends StatelessWidget {
               Expanded(
                 child: _SummaryValue(
                   label: 'Tax recorded',
-                  value: MoneyFormatter.formatCents(report.taxCents),
+                  value: ledgerAmount(report.taxCents),
                 ),
               ),
             ],
@@ -342,14 +329,14 @@ class _MonthExpenseCard extends StatelessWidget {
         subtitle: Text(
           '${month.receiptCount} '
           '${month.receiptCount == 1 ? 'receipt' : 'receipts'}'
-          ' · Tax ${MoneyFormatter.formatCents(month.taxCents)}',
+          ' · Tax ${ledgerAmount(month.taxCents)}',
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              MoneyFormatter.formatCents(month.totalCents),
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              ledgerAmount(month.totalCents),
+              style: LedgerStyles.rowAmount(context).copyWith(fontSize: 16),
             ),
             if (onTap != null) ...[
               const SizedBox(width: 6),

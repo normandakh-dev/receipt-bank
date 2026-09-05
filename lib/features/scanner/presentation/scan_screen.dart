@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:receipt_vault_ai/app/theme/ledger_styles.dart';
 import 'package:receipt_vault_ai/core/ocr/receipt_text_recognition_service.dart';
 import 'package:receipt_vault_ai/core/platform/mobile_platform.dart';
 import 'package:receipt_vault_ai/features/scanner/presentation/receipt_camera_screen.dart';
@@ -204,10 +205,7 @@ class _ScanScreenState extends State<ScanScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
           children: [
-            Text(
-              'Scan a receipt',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
+            Text('Scan a receipt', style: LedgerStyles.screenTitle(context)),
             const SizedBox(height: 8),
             Text(
               'Take a clear photo or choose one from your library. You can '

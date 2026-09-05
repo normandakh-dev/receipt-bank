@@ -159,6 +159,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         Card(
+          child: ListTile(
+            leading: const Icon(Icons.label_outline_rounded),
+            title: const Text('Categories'),
+            subtitle: const Text('Add, rename, and review your categories.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => context.push('/home/categories'),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
           child: Column(
             children: [
               ListTile(

@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:receipt_vault_ai/core/formatters/money_formatter.dart';
+import 'package:receipt_vault_ai/app/theme/ledger_styles.dart';
 import 'package:receipt_vault_ai/core/storage/receipt_image_storage.dart';
 import 'package:receipt_vault_ai/data/local/app_database.dart';
 import 'package:receipt_vault_ai/data/providers/database_providers.dart';
-import 'package:receipt_vault_ai/shared/widgets/category_visuals.dart';
+import 'package:receipt_vault_ai/shared/widgets/ledger_widgets.dart';
+import 'package:share_plus/share_plus.dart';
 
+/// "Detail · Receipt as object" from the paper-ledger design: the receipt is
+/// drawn as a printed slip on a deeper paper ground, followed by a short
+/// ledger of category, purpose, photo, and notes.
 class ReceiptDetailScreen extends ConsumerWidget {
   const ReceiptDetailScreen({required this.receiptId, super.key});
 
@@ -39,12 +43,37 @@ class ReceiptDetailScreen extends ConsumerWidget {
   }
 }
 
-class _ReceiptDetailsView extends ConsumerWidget {
+class _ReceiptDetailsView extends ConsumerStatefulWidget {
   const _ReceiptDetailsView({required this.details});
 
   final ReceiptDetails details;
 
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<_ReceiptDetailsView> createState() =>
+      _ReceiptDetailsViewState();
+}
+
+class _ReceiptDetailsViewState extends ConsumerState<_ReceiptDetailsView> {
+  // Resolved once per image path so parent rebuilds (favorite toggles) do
+  // not flash the photo row.
+  late Future<File?> _imageFile = ReceiptImageStorage.resolveFile(
+    widget.details.receipt.imagePath,
+  );
+
+  @override
+  void didUpdateWidget(covariant _ReceiptDetailsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.details.receipt.imagePath !=
+        widget.details.receipt.imagePath) {
+      _imageFile = ReceiptImageStorage.resolveFile(
+        widget.details.receipt.imagePath,
+      );
+    }
+  }
+
+  Receipt get _receipt => widget.details.receipt;
+
+  Future<void> _delete() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -64,265 +93,36 @@ class _ReceiptDetailsView extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed != true || !context.mounted) {
-      return;
-    }
-    await ref.read(databaseProvider).deleteReceipt(details.receipt.id);
-    if (context.mounted) {
-      context.go('/receipts');
-    }
+    if (confirmed != true || !mounted) return;
+    await ref.read(databaseProvider).deleteReceipt(_receipt.id);
+    if (mounted) context.go('/receipts');
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final receipt = details.receipt;
-    final colorScheme = Theme.of(context).colorScheme;
-    final color = categoryColor(details.category, colorScheme);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Receipt details'),
-        actions: [
-          IconButton(
-            tooltip: receipt.isFavorite
-                ? 'Remove from favorites'
-                : 'Add to favorites',
-            onPressed: () => ref
-                .read(databaseProvider)
-                .setReceiptFavorite(receipt.id, !receipt.isFavorite),
-            icon: Icon(
-              receipt.isFavorite
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-            ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'edit') {
-                context.push('/receipts/${receipt.id}/edit');
-              } else if (value == 'delete') {
-                _delete(context, ref);
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined),
-                    SizedBox(width: 10),
-                    Text('Edit receipt'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded),
-                    SizedBox(width: 10),
-                    Text('Delete receipt'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 140),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: color.withValues(alpha: 0.18),
-                  foregroundColor: color,
-                  child: Icon(
-                    categoryIcon(details.category.iconCode),
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  receipt.merchantName,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  DateFormat.yMMMMd().format(receipt.transactionDate),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  MoneyFormatter.formatCents(
-                    receipt.totalCents,
-                    currencyCode: receipt.currencyCode,
-                  ),
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                CategoryBadge(category: details.category),
-              ],
-            ),
-          ),
-          if (receipt.imagePath case final imagePath?) ...[
-            const SizedBox(height: 14),
-            _OriginalReceiptPhoto(imagePath: imagePath),
-          ],
-          if (receipt.purpose case final purpose?) ...[
-            const SizedBox(height: 14),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.flag_rounded, color: colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Purchase purpose',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(purpose),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Amount breakdown',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 14),
-                  _AmountRow(label: 'Subtotal', cents: receipt.subtotalCents),
-                  _AmountRow(label: 'Tax', cents: receipt.taxCents),
-                  if (receipt.tipCents > 0)
-                    _AmountRow(label: 'Tip', cents: receipt.tipCents),
-                  const Divider(height: 24),
-                  _AmountRow(
-                    label: 'Total',
-                    cents: receipt.totalCents,
-                    isTotal: true,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (details.items.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Line items',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    for (
-                      var index = 0;
-                      index < details.items.length;
-                      index++
-                    ) ...[
-                      if (index > 0) const Divider(height: 20),
-                      _ItemRow(item: details.items[index]),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (receipt.paymentMethod != null ||
-              receipt.cardLastFour != null) ...[
-            const SizedBox(height: 14),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: _InfoRow(
-                  icon: Icons.credit_card_rounded,
-                  label: 'Payment',
-                  value: [
-                    receipt.paymentMethod,
-                    if (receipt.cardLastFour case final digits?) '•••• $digits',
-                  ].whereType<String>().join(' · '),
-                ),
-              ),
-            ),
-          ],
-          if (receipt.notes case final notes?) ...[
-            const SizedBox(height: 14),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: _InfoRow(
-                  icon: Icons.notes_rounded,
-                  label: 'Notes',
-                  value: notes,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _OriginalReceiptPhoto extends StatefulWidget {
-  const _OriginalReceiptPhoto({required this.imagePath});
-
-  final String imagePath;
-
-  @override
-  State<_OriginalReceiptPhoto> createState() => _OriginalReceiptPhotoState();
-}
-
-class _OriginalReceiptPhotoState extends State<_OriginalReceiptPhoto> {
-  // Resolved once per image path. Creating a new future on every build made
-  // the photo card flash a spinner whenever the parent rebuilt, for example
-  // when the favorite star was toggled.
-  late Future<File?> _imageFile = ReceiptImageStorage.resolveFile(
-    widget.imagePath,
-  );
-
-  @override
-  void didUpdateWidget(covariant _OriginalReceiptPhoto oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.imagePath != widget.imagePath) {
-      _imageFile = ReceiptImageStorage.resolveFile(widget.imagePath);
+  Future<void> _share() async {
+    final receipt = _receipt;
+    final summary =
+        '${receipt.merchantName} · '
+        '${DateFormat.yMMMd().format(receipt.transactionDate)} · '
+        '${receipt.currencyCode} ${ledgerAmount(receipt.totalCents)}';
+    final image = await _imageFile;
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          title: 'Share receipt',
+          text: summary,
+          files: image == null ? null : [XFile(image.path)],
+        ),
+      );
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('The receipt could not be shared.')),
+        );
+      }
     }
   }
 
-  Future<void> _openPhoto(BuildContext context, File imageFile) {
+  Future<void> _openPhoto(File imageFile) {
     return showDialog<void>(
       context: context,
       builder: (context) => Dialog.fullscreen(
@@ -352,125 +152,297 @@ class _OriginalReceiptPhotoState extends State<_OriginalReceiptPhoto> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return FutureBuilder<File?>(
-      future: _imageFile,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Card(
-            child: SizedBox(
-              height: 180,
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          );
-        }
-        final imageFile = snapshot.data;
-        if (imageFile == null) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.broken_image_outlined,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('The original receipt photo is unavailable.'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+    final receipt = _receipt;
+    final details = widget.details;
+    final accent = LedgerStyles.accent(context);
 
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => _openPhoto(context, imageFile),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      backgroundColor: LedgerStyles.paperDeep(context),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 48),
+          children: [
+            Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.image_rounded, color: colorScheme.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Original receipt photo',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      const Icon(Icons.open_in_full_rounded, size: 20),
-                    ],
+                IconButton(
+                  tooltip: 'Back',
+                  onPressed: () => context.canPop()
+                      ? context.pop()
+                      : context.go('/receipts'),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: receipt.isFavorite
+                      ? 'Remove from favorites'
+                      : 'Add to favorites',
+                  onPressed: () => ref
+                      .read(databaseProvider)
+                      .setReceiptFavorite(receipt.id, !receipt.isFavorite),
+                  icon: Icon(
+                    receipt.isFavorite
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: receipt.isFavorite ? accent : null,
                   ),
                 ),
-                SizedBox(
-                  width: double.infinity,
-                  height: 300,
-                  child: Image.file(
-                    imageFile,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Text('The receipt photo could not be displayed.'),
-                    ),
-                  ),
+                IconButton(
+                  tooltip: 'Share receipt',
+                  onPressed: _share,
+                  icon: const Icon(Icons.ios_share_rounded),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
-                  child: Text(
-                    'Tap to zoom',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                PopupMenuButton<String>(
+                  tooltip: 'More',
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  onSelected: (value) {
+                    if (value == 'edit') {
+                      context.push('/receipts/${receipt.id}/edit');
+                    } else if (value == 'delete') {
+                      _delete();
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Edit receipt')),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete receipt'),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _AmountRow extends StatelessWidget {
-  const _AmountRow({
-    required this.label,
-    required this.cents,
-    this.isTotal = false,
-  });
-
-  final String label;
-  final int cents;
-  final bool isTotal;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = isTotal
-        ? Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)
-        : Theme.of(context).textTheme.bodyMedium;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: style)),
-          Text(MoneyFormatter.formatCents(cents), style: style),
-        ],
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: _ReceiptSlip(details: details),
+            ),
+            const SizedBox(height: 22),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Column(
+                children: [
+                  _LedgerField(
+                    label: 'CATEGORY',
+                    value: details.category.name,
+                    trailingIcon: Icons.edit_outlined,
+                    onTap: () => context.push('/receipts/${receipt.id}/edit'),
+                  ),
+                  _LedgerField(
+                    label: 'PURPOSE',
+                    value: receipt.purpose?.trim().isNotEmpty ?? false
+                        ? receipt.purpose!.trim()
+                        : 'Not set',
+                    muted: !(receipt.purpose?.trim().isNotEmpty ?? false),
+                    trailingIcon: Icons.edit_outlined,
+                    onTap: () => context.push('/receipts/${receipt.id}/edit'),
+                  ),
+                  if (receipt.imagePath != null)
+                    FutureBuilder<File?>(
+                      future: _imageFile,
+                      builder: (context, snapshot) {
+                        final file = snapshot.data;
+                        final pending =
+                            snapshot.connectionState != ConnectionState.done;
+                        return _LedgerField(
+                          label: 'PHOTO',
+                          value: pending
+                              ? 'Locating…'
+                              : file == null
+                              ? 'Photo unavailable'
+                              : 'View original',
+                          accent: file != null,
+                          muted: file == null,
+                          trailingIcon: Icons.chevron_right_rounded,
+                          onTap: file == null ? null : () => _openPhoto(file),
+                        );
+                      },
+                    ),
+                  if (receipt.notes case final notes?)
+                    _LedgerField(label: 'NOTES', value: notes, last: true),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
+/// The receipt drawn as a printed slip.
+class _ReceiptSlip extends StatelessWidget {
+  const _ReceiptSlip({required this.details});
 
-  final ReceiptItem item;
+  final ReceiptDetails details;
+
+  @override
+  Widget build(BuildContext context) {
+    final receipt = details.receipt;
+    final muted = LedgerStyles.inkSoft(context);
+    final lineStyle = LedgerStyles.receiptLine(context);
+    final mutedLine = LedgerStyles.receiptLine(context, color: muted);
+    final captured = receipt.rawOcrText == null
+        ? 'ENTERED MANUALLY'
+        : 'CAPTURED ON DEVICE';
+    final payment = [
+      if (receipt.paymentMethod case final method?) method.toUpperCase(),
+      if (receipt.cardLastFour case final digits?) '···· $digits',
+    ].join(' ');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
+      decoration: BoxDecoration(
+        color: LedgerStyles.paperCard(context),
+        boxShadow: [
+          BoxShadow(
+            color: LedgerStyles.ink(context).withValues(alpha: 0.28),
+            blurRadius: 28,
+            spreadRadius: -14,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            receipt.merchantName.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: LedgerStyles.eyebrow(
+              context,
+            ).copyWith(letterSpacing: 2, height: 1.3),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            DateFormat(
+              'MMM dd yyyy',
+            ).format(receipt.transactionDate).toUpperCase(),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: LedgerStyles.monoFamily,
+              fontSize: 11,
+              height: 1.4,
+              color: muted,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const LedgerDashedRule(),
+          if (details.items.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              child: Column(
+                children: [
+                  for (
+                    var index = 0;
+                    index < details.items.length;
+                    index++
+                  ) ...[
+                    if (index > 0) const SizedBox(height: 11),
+                    _SlipLine(
+                      label: _itemLabel(details.items[index]),
+                      amount: details.items[index].totalPriceCents,
+                      style: lineStyle,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const LedgerDashedRule(),
+          ],
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Column(
+              children: [
+                _SlipLine(
+                  label: 'SUBTOTAL',
+                  amount: receipt.subtotalCents,
+                  style: mutedLine,
+                ),
+                const SizedBox(height: 9),
+                _SlipLine(
+                  label: 'TAX',
+                  amount: receipt.taxCents,
+                  style: mutedLine,
+                ),
+                if (receipt.tipCents > 0) ...[
+                  const SizedBox(height: 9),
+                  _SlipLine(
+                    label: 'TIP',
+                    amount: receipt.tipCents,
+                    style: mutedLine,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(top: 18),
+            padding: const EdgeInsets.only(top: 16),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: LedgerStyles.ink(context), width: 1.5),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
+                    'TOTAL',
+                    style: LedgerStyles.eyebrow(
+                      context,
+                      color: LedgerStyles.ink(context),
+                    ).copyWith(fontSize: 12),
+                  ),
+                ),
+                Text(
+                  ledgerAmount(receipt.totalCents),
+                  style: TextStyle(
+                    fontFamily: LedgerStyles.monoFamily,
+                    fontSize: 30,
+                    height: 1,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -1.4,
+                    color: LedgerStyles.ink(context),
+                    fontFeatures: LedgerStyles.tabular,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            [if (payment.isNotEmpty) payment, captured].join('\n'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: LedgerStyles.monoFamily,
+              fontSize: 11,
+              height: 1.5,
+              color: muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _itemLabel(ReceiptItem item) {
+    final name = item.name.toUpperCase();
+    return item.quantity > 1 ? '$name ×${item.quantity}' : name;
+  }
+}
+
+class _SlipLine extends StatelessWidget {
+  const _SlipLine({
+    required this.label,
+    required this.amount,
+    required this.style,
+  });
+
+  final String label;
+  final int amount;
+  final TextStyle style;
 
   @override
   Widget build(BuildContext context) {
@@ -478,48 +450,95 @@ class _ItemRow extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            item.quantity > 1 ? '${item.quantity} × ${item.name}' : item.name,
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
           ),
         ),
-        Text(
-          MoneyFormatter.formatCents(item.totalPriceCents),
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+        const SizedBox(width: 12),
+        Text(ledgerAmount(amount), style: style),
       ],
     );
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
+class _LedgerField extends StatelessWidget {
+  const _LedgerField({
     required this.label,
     required this.value,
+    this.trailingIcon,
+    this.onTap,
+    this.accent = false,
+    this.muted = false,
+    this.last = false,
   });
 
-  final IconData icon;
   final String label;
   final String value;
+  final IconData? trailingIcon;
+  final VoidCallback? onTap;
+  final bool accent;
+  final bool muted;
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: colorScheme.primary),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 4),
-              Text(value),
-            ],
-          ),
+    final color = accent
+        ? LedgerStyles.accent(context)
+        : muted
+        ? LedgerStyles.inkSoft(context)
+        : LedgerStyles.ink(context);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : Border(bottom: BorderSide(color: LedgerStyles.rule(context))),
         ),
-      ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 88,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  label,
+                  style: LedgerStyles.eyebrow(
+                    context,
+                  ).copyWith(letterSpacing: 1.4),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontFamily: LedgerStyles.sansFamily,
+                  fontSize: 15,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ),
+            if (trailingIcon != null) ...[
+              const SizedBox(width: 12),
+              Icon(
+                trailingIcon,
+                size: 19,
+                color: accent
+                    ? LedgerStyles.accent(context)
+                    : LedgerStyles.inkSoft(context),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
