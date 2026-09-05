@@ -268,6 +268,30 @@ class AppDatabase extends _$AppDatabase {
     await ReceiptImageStorage.deleteOwnedImage(receipt?.imagePath);
   }
 
+  /// Deletes the stored photo of every receipt dated before [cutoff] and
+  /// clears its image path. The receipt record itself is kept.
+  Future<int> removeReceiptImagesBefore(DateTime cutoff) async {
+    final stale =
+        await (select(receipts)
+              ..where((receipt) => receipt.imagePath.isNotNull())
+              ..where(
+                (receipt) => receipt.transactionDate.isSmallerThanValue(cutoff),
+              ))
+            .get();
+    var removed = 0;
+    for (final receipt in stale) {
+      await ReceiptImageStorage.deleteOwnedImage(receipt.imagePath);
+      await (update(receipts)..where((row) => row.id.equals(receipt.id))).write(
+        ReceiptsCompanion(
+          imagePath: const Value(null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      removed++;
+    }
+    return removed;
+  }
+
   Future<int> repairReceiptImagePaths() async {
     final withImages = await (select(
       receipts,

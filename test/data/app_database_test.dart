@@ -1,17 +1,30 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:receipt_vault_ai/data/local/app_database.dart';
 import 'package:receipt_vault_ai/data/local/default_categories.dart';
 
+import '../support/fake_path_provider.dart';
+
 void main() {
   late AppDatabase database;
+  late Directory root;
 
-  setUp(() {
+  setUp(() async {
     database = AppDatabase(NativeDatabase.memory());
+    root = await Directory.systemTemp.createTemp('receipt-db-test');
+    PathProviderPlatform.instance = FakePathProviderPlatform(
+      documentsPath: root.path,
+      temporaryPath: root.path,
+    );
   });
 
   tearDown(() async {
     await database.close();
+    await root.delete(recursive: true);
   });
 
   test('creates all default categories', () async {
@@ -112,6 +125,58 @@ void main() {
     expect(detail?.category.name, 'Groceries');
     expect(detail?.items.single.name, 'Fresh produce');
     expect(list.single.receipt.totalCents, 1050);
+  });
+
+  test('removes photos older than a cutoff but keeps the receipts', () async {
+    await database.initialize();
+    final images = await Directory(
+      path.join(root.path, 'receipt_images'),
+    ).create();
+    final oldPhoto = await File(
+      path.join(images.path, 'old.jpg'),
+    ).writeAsBytes([1, 2, 3]);
+    final newPhoto = await File(
+      path.join(images.path, 'new.jpg'),
+    ).writeAsBytes([4, 5, 6]);
+    final oldId = await database.createReceipt(
+      ReceiptDraft(
+        merchantName: 'Old Shop',
+        transactionDate: DateTime(2024, 1, 15),
+        categoryId: 'category-other',
+        subtotalCents: 100,
+        taxCents: 0,
+        tipCents: 0,
+        totalCents: 100,
+        imagePath: 'receipt_images/old.jpg',
+      ),
+    );
+    final newId = await database.createReceipt(
+      ReceiptDraft(
+        merchantName: 'New Shop',
+        transactionDate: DateTime(2026, 8, 1),
+        categoryId: 'category-other',
+        subtotalCents: 200,
+        taxCents: 0,
+        tipCents: 0,
+        totalCents: 200,
+        imagePath: 'receipt_images/new.jpg',
+      ),
+    );
+
+    final removed = await database.removeReceiptImagesBefore(
+      DateTime(2025, 9, 5),
+    );
+
+    final rows = {
+      for (final row in await database.select(database.receipts).get())
+        row.id: row,
+    };
+    expect(removed, 1);
+    expect(rows[oldId]?.imagePath, isNull);
+    expect(rows[oldId]?.merchantName, 'Old Shop');
+    expect(rows[newId]?.imagePath, 'receipt_images/new.jpg');
+    expect(await oldPhoto.exists(), isFalse);
+    expect(await newPhoto.exists(), isTrue);
   });
 
   test('detects duplicate receipts and can replace the existing row', () async {

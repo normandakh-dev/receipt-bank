@@ -32,3 +32,6 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Xcode-generated Swift Package Manager state
+**/xcshareddata/swiftpm/

@@ -40,6 +40,13 @@ Completed:
 - Database, OCR parsing, reporting, classification, money-formatting, and
   navigation tests
 
+Receipt photos are reduced after text recognition: the shorter side is
+scaled to 1280 pixels and saved as JPEG at quality 72, which is roughly 0.2 to
+0.4 MB per receipt instead of several megabytes. The original capture is
+deleted from temporary storage once the reduced copy is written. Settings shows
+the space used by photos and can delete photos older than one year while
+keeping every receipt record.
+
 OCR and purpose recognition run on the device. Receipt photos are used for
 recognition and are not uploaded by the app. Because receipt layouts vary,
 every detected value remains editable and the category must be confirmed.
