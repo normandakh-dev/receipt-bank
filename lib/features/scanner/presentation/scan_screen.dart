@@ -57,7 +57,7 @@ class _ScanScreenState extends State<ScanScreen> {
     final image = await Navigator.of(context, rootNavigator: true).push<XFile>(
       MaterialPageRoute(builder: (context) => const ReceiptCameraScreen()),
     );
-    if (image != null) await _recognize(image);
+    if (image != null && mounted) await _recognize(image);
   }
 
   Future<void> _pickAndRecognize() async {

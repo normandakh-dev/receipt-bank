@@ -210,8 +210,8 @@ class _TaxPurposeScreenState extends ConsumerState<TaxPurposeScreen> {
                         const Expanded(
                           child: Text(
                             'Your PDF is prepared on this device and attached '
-                            'through Android’s share menu. Choose your email '
-                            'app, address it, and press Send.',
+                            'through your phone’s share menu. Choose your '
+                            'email app, address it, and press Send.',
                           ),
                         ),
                       ],

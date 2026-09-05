@@ -463,7 +463,7 @@ String _periodLabel(
   return switch (grouping) {
     SpendingReportGrouping.weekly =>
       '${DateFormat.MMMd().format(period.start)} – '
-          '${DateFormat.yMMMd().format(period.endExclusive.subtract(const Duration(days: 1)))}',
+          '${DateFormat.yMMMd().format(DateTime(period.endExclusive.year, period.endExclusive.month, period.endExclusive.day - 1))}',
     SpendingReportGrouping.monthly => DateFormat.yMMMM().format(period.start),
     SpendingReportGrouping.yearly => DateFormat.y().format(period.start),
   };

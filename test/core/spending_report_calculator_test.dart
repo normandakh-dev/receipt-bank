@@ -32,6 +32,28 @@ void main() {
     expect(totals[1].totalCents, 4000);
   });
 
+  test('keeps a week together when it spans a daylight-saving change', () {
+    // Vancouver springs forward on Sunday 8 March 2026.
+    final weekRecords = [
+      SpendingRecord(date: DateTime(2026, 3, 2), cents: 100),
+      SpendingRecord(date: DateTime(2026, 3, 7), cents: 200),
+      SpendingRecord(date: DateTime(2026, 3, 8), cents: 300),
+    ];
+    final totals = SpendingReportCalculator.group(
+      weekRecords,
+      SpendingReportGrouping.weekly,
+    );
+
+    expect(totals, hasLength(1));
+    expect(totals.single.start, DateTime(2026, 3, 2));
+    expect(totals.single.endExclusive, DateTime(2026, 3, 9));
+    expect(totals.single.totalCents, 600);
+    expect(
+      SpendingReportCalculator.startOfWeek(DateTime(2026, 3, 8)),
+      DateTime(2026, 3, 2),
+    );
+  });
+
   test('uses Monday as the beginning of a weekly report', () {
     expect(
       SpendingReportCalculator.startOfWeek(DateTime(2026, 7, 29)),

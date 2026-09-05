@@ -261,7 +261,8 @@ class ReceiptOcrParser {
     for (var index = lines.length - 1; index >= 0; index--) {
       final line = lines[index];
       final lower = _normalizedLabel(line);
-      if (!labels.any(lower.contains) || excludedLabels.any(lower.contains)) {
+      if (!labels.any((label) => _startsWord(lower, label)) ||
+          excludedLabels.any(lower.contains)) {
         continue;
       }
       final amount =
@@ -313,6 +314,7 @@ class ReceiptOcrParser {
 
   static int? _findTax(List<String> lines) {
     final taxAmounts = <int>[];
+    int? combinedTax;
     for (final line in lines) {
       final lower = _normalizedLabel(line);
       if (!RegExp(r'\b(tax|gst|hst|pst|qst)\b').hasMatch(lower) ||
@@ -320,14 +322,33 @@ class ReceiptOcrParser {
         continue;
       }
       final amount = _parseAmountAtEnd(line);
-      if (amount != null && amount >= 0) {
+      if (amount == null || amount < 0) {
+        continue;
+      }
+      // Receipts that print GST and PST on their own lines usually also
+      // print a combined "TOTAL TAX" line. Summing all three doubles the tax,
+      // so a combined line wins over the individual amounts.
+      if (_combinedTaxLabel.hasMatch(lower)) {
+        combinedTax = amount;
+      } else {
         taxAmounts.add(amount);
       }
+    }
+    if (combinedTax != null) {
+      return combinedTax;
     }
     if (taxAmounts.isEmpty) {
       return null;
     }
     return taxAmounts.fold<int>(0, (sum, amount) => sum + amount);
+  }
+
+  static final RegExp _combinedTaxLabel = RegExp(
+    r'\b(?:total\s+tax(?:es)?|tax(?:es)?\s+total|taxes)\b',
+  );
+
+  static bool _startsWord(String text, String label) {
+    return RegExp(r'\b' + RegExp.escape(label)).hasMatch(text);
   }
 
   static int? _fallbackTotal(List<String> lines) {
@@ -377,7 +398,10 @@ class ReceiptOcrParser {
             when value.contains('amex') || value.contains('american express') =>
           'American Express',
         final value when value.contains('debit') => 'Debit',
-        final value when value.contains('cash') => 'Cash',
+        final value
+            when RegExp(r'\bcash\b').hasMatch(value) &&
+                !RegExp(r'\bcash\s*back\b').hasMatch(value) =>
+          'Cash',
         _ => null,
       };
       lastFour ??= _lastFour.firstMatch(line)?.group(1);

@@ -31,6 +31,18 @@ void main() {
     expect(result.purpose, 'General purchase');
   });
 
+  test('matches keywords as whole words only', () {
+    final business = ReceiptPurposeClassifier.classify(
+      merchantName: 'Harbour Business Services',
+    );
+    expect(business.categoryId, 'category-business');
+
+    final vegas = ReceiptPurposeClassifier.classify(
+      merchantName: 'Las Vegas Souvenirs',
+    );
+    expect(vegas.categoryId, isNot('category-gas'));
+  });
+
   test('recognizes a Vancouver restaurant alias with a specific purpose', () {
     final result = ReceiptPurposeClassifier.classify(
       merchantName: 'BREKA BAKERY & CAFE #4',

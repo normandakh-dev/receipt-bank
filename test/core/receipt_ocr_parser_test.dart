@@ -208,6 +208,51 @@ TOTAL \$50.00
     expect(result.transactionDate, DateTime(2024, 12, 24));
   });
 
+  test('uses the printed total tax instead of adding GST and PST to it', () {
+    const rawText = '''
+HARDWARE SHOP
+SUBTOTAL 40.00
+GST 2.00
+PST 2.80
+TOTAL TAX 4.80
+TOTAL 44.80
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.taxCents, 480);
+    expect(result.totalCents, 4480);
+  });
+
+  test('does not treat an item containing "tip" as a gratuity', () {
+    const rawText = '''
+CORNER STORE
+MULTIPACK TISSUE 4.99
+SUBTOTAL 4.99
+GST 0.25
+TOTAL 5.24
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.tipCents, isNull);
+    expect(result.totalCents, 524);
+  });
+
+  test('does not report cash when only a cashier line is present', () {
+    const rawText = '''
+CORNER STORE
+CASHIER: SAM
+COFFEE 4.50
+TOTAL 4.50
+VISA **** 1234
+''';
+
+    final result = ReceiptOcrParser.parse(rawText);
+
+    expect(result.paymentMethod, 'Visa');
+  });
+
   test('leaves the date unset when the receipt has no valid date', () {
     const rawText = '''
 CORNER STORE

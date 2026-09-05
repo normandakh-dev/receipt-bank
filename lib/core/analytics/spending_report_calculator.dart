@@ -25,11 +25,8 @@ class SpendingReportCalculator {
   const SpendingReportCalculator._();
 
   static int currentWeekTotal(List<SpendingRecord> records, DateTime now) {
-    return _sumBetween(
-      records,
-      startOfWeek(now),
-      startOfWeek(now).add(const Duration(days: 7)),
-    );
+    final start = startOfWeek(now);
+    return _sumBetween(records, start, endOfWeekExclusive(start));
   }
 
   static int currentMonthTotal(List<SpendingRecord> records, DateTime now) {
@@ -64,7 +61,7 @@ class SpendingReportCalculator {
 
     final result = totals.entries.map((entry) {
       final end = switch (grouping) {
-        SpendingReportGrouping.weekly => entry.key.add(const Duration(days: 7)),
+        SpendingReportGrouping.weekly => endOfWeekExclusive(entry.key),
         SpendingReportGrouping.monthly => DateTime(
           entry.key.year,
           entry.key.month + 1,
@@ -82,9 +79,22 @@ class SpendingReportCalculator {
     return result;
   }
 
+  /// Midnight on the Monday of the week containing [value].
+  ///
+  /// Calendar arithmetic is used instead of [DateTime.subtract] so a week
+  /// that spans a daylight-saving change still starts at local midnight and
+  /// every day of that week maps to the same key.
   static DateTime startOfWeek(DateTime value) {
-    final date = DateTime(value.year, value.month, value.day);
-    return date.subtract(Duration(days: date.weekday - DateTime.monday));
+    return DateTime(
+      value.year,
+      value.month,
+      value.day - (value.weekday - DateTime.monday),
+    );
+  }
+
+  /// Midnight on the Monday after the week that starts at [weekStart].
+  static DateTime endOfWeekExclusive(DateTime weekStart) {
+    return DateTime(weekStart.year, weekStart.month, weekStart.day + 7);
   }
 
   static int _sumBetween(

@@ -75,25 +75,24 @@ upgrade the aligned set after Flutter's SDK pins support the newer analyzer.
 
 The generated Drift file is committed. Regenerate it after schema changes:
 
-```powershell
+```bash
 dart run build_runner build
 ```
 
 ## Validate
 
-```powershell
+```bash
 flutter pub get
 flutter analyze
 flutter test
 ```
 
-## Run on Android from this Windows computer
+## Run on Android
 
 Install Android Studio and its Android SDK, create or start an emulator, and
 then run:
 
-```powershell
-$env:Path = "C:\Users\user\flutter-sdk\bin;$env:Path"
+```bash
 flutter doctor
 flutter doctor --android-licenses
 flutter devices
@@ -102,14 +101,15 @@ flutter run -d <android-device-id>
 
 Replace `<android-device-id>` with the ID printed by `flutter devices`.
 
-## Run on iPhone
+## Run on iPhone from this Mac
 
-iPhone builds require macOS with Xcode. Copy or clone this project onto the
-Mac, install Flutter and Xcode, start an iOS Simulator (or connect an iPhone),
-and run:
+The Flutter SDK lives at `~/development/flutter` and is on the PATH through
+`~/.zshrc`. CocoaPods is installed as a user gem in `~/.gem/ruby/2.6.0/bin`,
+which must also be on the PATH for iOS builds.
 
 ```bash
-cd "/path/to/Receipt Scanning Project"
+cd "/Users/narmandakhganbold/Desktop/app/Receipt Scanning Project"
+export PATH="$HOME/development/flutter/bin:$HOME/.gem/ruby/2.6.0/bin:$PATH"
 flutter pub get
 open -a Simulator
 flutter devices
@@ -118,3 +118,11 @@ flutter run -d <ios-device-id>
 
 For a physical iPhone, open `ios/Runner.xcworkspace` in Xcode once to select
 your development team and signing identity.
+
+If `pod` fails with `uninitialized constant ActiveSupport::LoggerThreadSafeLevel::Logger`,
+the fix is to pin `concurrent-ruby` to 1.3.4 in the user gem directory:
+
+```bash
+gem install concurrent-ruby -v 1.3.4 --user-install
+gem uninstall concurrent-ruby -v 1.3.8 --user-install -x
+```

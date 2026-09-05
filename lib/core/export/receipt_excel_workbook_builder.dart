@@ -400,11 +400,13 @@ abstract final class ReceiptExcelWorkbookBuilder {
     }
 
     var nextRow = 18;
+    final monthHeaderRows = <int>[];
     for (var month = 12; month >= 1; month--) {
       final monthRecords = records
           .where((record) => record.date.month == month)
           .toList();
       if (monthRecords.isEmpty) continue;
+      monthHeaderRows.add(nextRow);
       rows.add(
         _row(nextRow, [
           _textCell(
@@ -479,9 +481,7 @@ abstract final class ReceiptExcelWorkbookBuilder {
       mergedRanges: [
         'A1:K1',
         'A2:K2',
-        for (final row in rows)
-          if (row.contains('—') && row.contains('receipt'))
-            'A${_rowNumber(row)}:K${_rowNumber(row)}',
+        for (final row in monthHeaderRows) 'A$row:K$row',
       ],
       autoFilter: 'A4:F16',
     );
@@ -528,10 +528,6 @@ abstract final class ReceiptExcelWorkbookBuilder {
 
   static String _row(int number, Iterable<String> cells) {
     return '<row r="$number">${cells.join()}</row>';
-  }
-
-  static int _rowNumber(String rowXml) {
-    return int.parse(RegExp(r'<row r="(\d+)"').firstMatch(rowXml)!.group(1)!);
   }
 
   static String _textCell(String reference, String value, [int style = 0]) {

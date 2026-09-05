@@ -223,11 +223,12 @@ abstract final class ReceiptPurposeClassifier {
       var score = 0;
       String? ruleMatch;
       for (final keyword in rule.keywords) {
-        if (merchant.contains(keyword)) {
+        final pattern = _keywordPattern(keyword);
+        if (pattern.hasMatch(merchant)) {
           score += 3;
           ruleMatch ??= keyword;
         }
-        if (items.contains(keyword)) {
+        if (pattern.hasMatch(items)) {
           score += 1;
           ruleMatch ??= keyword;
         }
@@ -253,6 +254,17 @@ abstract final class ReceiptPurposeClassifier {
       purpose: bestRule.purpose,
       reason: 'Matched “$matchedKeyword”',
       confidence: bestScore >= 3 ? 0.9 : 0.65,
+    );
+  }
+
+  static final Map<String, RegExp> _patternCache = {};
+
+  /// Keywords must match whole words. A plain substring test lets "bus"
+  /// match "business" and "gas" match "Las Vegas", which mis-files receipts.
+  static RegExp _keywordPattern(String keyword) {
+    return _patternCache.putIfAbsent(
+      keyword,
+      () => RegExp(r'\b' + RegExp.escape(keyword) + r'\b'),
     );
   }
 }

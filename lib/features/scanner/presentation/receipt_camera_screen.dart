@@ -34,11 +34,16 @@ class _ReceiptCameraScreenState extends State<ReceiptCameraScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
-      _disposeController();
+      if (controller != null && controller.value.isInitialized) {
+        _disposeController();
+      }
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      // The controller was released when the app went inactive, so it is
+      // null here; a fresh one must be created or the preview stays black.
+      if (controller == null && _errorMessage == null && !_isInitializing) {
+        _initializeCamera();
+      }
     }
   }
 

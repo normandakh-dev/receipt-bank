@@ -297,10 +297,30 @@ class _ReceiptDetailsView extends ConsumerWidget {
   }
 }
 
-class _OriginalReceiptPhoto extends StatelessWidget {
+class _OriginalReceiptPhoto extends StatefulWidget {
   const _OriginalReceiptPhoto({required this.imagePath});
 
   final String imagePath;
+
+  @override
+  State<_OriginalReceiptPhoto> createState() => _OriginalReceiptPhotoState();
+}
+
+class _OriginalReceiptPhotoState extends State<_OriginalReceiptPhoto> {
+  // Resolved once per image path. Creating a new future on every build made
+  // the photo card flash a spinner whenever the parent rebuilt, for example
+  // when the favorite star was toggled.
+  late Future<File?> _imageFile = ReceiptImageStorage.resolveFile(
+    widget.imagePath,
+  );
+
+  @override
+  void didUpdateWidget(covariant _OriginalReceiptPhoto oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imagePath != widget.imagePath) {
+      _imageFile = ReceiptImageStorage.resolveFile(widget.imagePath);
+    }
+  }
 
   Future<void> _openPhoto(BuildContext context, File imageFile) {
     return showDialog<void>(
@@ -334,7 +354,7 @@ class _OriginalReceiptPhoto extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return FutureBuilder<File?>(
-      future: ReceiptImageStorage.resolveFile(imagePath),
+      future: _imageFile,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Card(
