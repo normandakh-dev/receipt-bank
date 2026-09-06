@@ -3,15 +3,45 @@ import 'package:receipt_vault_ai/core/classification/local_merchant_directory.da
 class ReceiptOcrParser {
   const ReceiptOcrParser._();
 
+  /// The digits of an amount before its decimal separator.
+  ///
+  /// Groups may be separated by a comma (optionally followed by a space, as
+  /// OCR often inserts one) but never by a bare space: when a skewed photo
+  /// puts two amounts on one recognised row, "130.56 130.98" must not be
+  /// read as the single amount 56,130.98.
+  static const String _wholePart = r'[0-9Oo]+(?:,\s?[0-9Oo]{3})*';
+  static const String _amountBody =
+      '-?$_wholePart'
+      r'[.,][0-9OoIl]{2}';
+
   static final RegExp _amountAtEnd = RegExp(
-    r'((?:CAD|USD)?\s*\$?\s*-?[0-9Oo][0-9Oo,\s]*[.,][0-9OoIl]{2})'
+    '((?:CAD|USD)?'
+    r'\s*\$?\s*'
+    '$_amountBody)'
     r'(?:\s*(?:CAD|USD))?\s*$',
     caseSensitive: false,
   );
   static final RegExp _amountAnywhere = RegExp(
-    r'((?:CAD|USD)?\s*\$?\s*-?[0-9Oo][0-9Oo,\s]*[.,][0-9OoIl]{2})'
+    '((?:CAD|USD)?'
+    r'\s*\$?\s*'
+    '$_amountBody)'
     r'(?:\s*(?:CAD|USD))?',
     caseSensitive: false,
+  );
+
+  /// An amount qualified by its currency, such as "TOTAL CAD$ 17.82".
+  /// OCR frequently reads the dollar sign in "CAD$" as an S.
+  static final RegExp _currencyQualifiedAmount = RegExp(
+    r'\b(?:CAD|USD)\s*[\$S]?\s*('
+    '$_amountBody'
+    r')',
+    caseSensitive: false,
+  );
+
+  /// A tax keyword used as an identifier ("GST #", "PST No.") rather than as
+  /// the label of an amount.
+  static final RegExp _taxRegistrationLabel = RegExp(
+    r'\b(?:tax|gst|hst|pst|qst)\s*(?:#|n[o0]\b|number\b|reg\b)',
   );
   static final RegExp _numericDate = RegExp(
     r'\b(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})\b',
@@ -70,7 +100,11 @@ class ReceiptOcrParser {
     final calculatedTotal = subtotal != null && (tax != null || tip != null)
         ? subtotal + (tax ?? 0) + (tip ?? 0)
         : null;
-    final total = labeledTotal ?? calculatedTotal ?? _fallbackTotal(lines);
+    final total =
+        labeledTotal ??
+        calculatedTotal ??
+        _currencyQualifiedTotal(lines) ??
+        _fallbackTotal(lines);
     final inferredSubtotal =
         subtotal ??
         (total != null
@@ -392,7 +426,10 @@ class ReceiptOcrParser {
       final line = lines[index];
       final lower = _normalizedLabel(line);
       if (!RegExp(r'\b(tax|gst|hst|pst|qst)\b').hasMatch(lower) ||
-          lower.contains('taxable')) {
+          lower.contains('taxable') ||
+          // "GST #: R743318321" is a business number. Any amount that shares
+          // that recognised row belongs to a different line of the receipt.
+          _taxRegistrationLabel.hasMatch(lower)) {
         continue;
       }
       final amount =
@@ -424,6 +461,22 @@ class ReceiptOcrParser {
 
   static bool _startsWord(String text, String label) {
     return RegExp(r'\b' + RegExp.escape(label)).hasMatch(text);
+  }
+
+  /// The largest amount printed with its currency code, as receipts do for
+  /// the amount actually charged ("TOTAL CAD\$ 17.82"). Used when the total's
+  /// own label could not be tied to an amount.
+  static int? _currencyQualifiedTotal(List<String> lines) {
+    int? best;
+    for (final line in lines) {
+      for (final match in _currencyQualifiedAmount.allMatches(line)) {
+        final amount = _parseAmountToken(match.group(1)!);
+        if (amount != null && amount > 0 && (best == null || amount > best)) {
+          best = amount;
+        }
+      }
+    }
+    return best;
   }
 
   static int? _fallbackTotal(List<String> lines) {
@@ -466,7 +519,8 @@ class ReceiptOcrParser {
     for (final line in lines.reversed) {
       final lower = line.toLowerCase();
       method ??= switch (lower) {
-        final value when value.contains('visa') => 'Visa',
+        // Dot-matrix receipts often render VISA with a U-shaped V.
+        final value when RegExp(r'\b[vu]isa\b').hasMatch(value) => 'Visa',
         final value when value.contains('mastercard') => 'Mastercard',
         final value when value.contains('master card') => 'Mastercard',
         final value
